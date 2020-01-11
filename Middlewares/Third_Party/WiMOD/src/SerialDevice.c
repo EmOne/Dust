@@ -38,19 +38,16 @@ static HANDLE   ComHandle = INVALID_HANDLE_VALUE;
 #else
 static UART_HandleTypeDef *hWiModUart;
 #endif
-#if defined(STM32L1xx) || defined(STM32F429xx)
+
 #define USART_STATUS_REGISTER   SR                     //!< HAL USART status register name adapter.
 #define USART_DATA_REGISTER     DR                     //!< HAL UART data register name adapter.
-#else
-#define USART_STATUS_REGISTER   ISR                     //!< HAL USART status register name adapter.
-#define USART_DATA_REGISTER     RDR                     //!< HAL UART data register name adapter.
-#endif
+
 //------------------------------------------------------------------------------
 //
 //  Section Code
 //
 //------------------------------------------------------------------------------
-uint8_t UsartTextString[USARTTEXTSTRINGSIZE];
+uint8_t UsartTextString;
 //------------------------------------------------------------------------------
 //
 //  Open
@@ -137,24 +134,15 @@ SerialDevice_Open(
     // TODO : add your own platform specific code here
     if (huart != NULL) {
     		hWiModUart = huart;
-  	} else {
+  	}
     //    if (hWiModUart->gState == HAL_UART_STATE_READY) {
 //		return true;
 //	}
-#ifdef STM32L1xx
-	hWiModUart->Instance = USART2;
-#elif defined(USE_STM32F4XX_NUCLEO_144)
 	hWiModUart->Instance = USART6;
-#else
-	hWiModUart->Instance = USART3;
-#endif
-	}
 	hWiModUart->Init.Mode = UART_MODE_TX_RX;
 	hWiModUart->Init.HwFlowCtl = UART_HWCONTROL_NONE;
 	hWiModUart->Init.OverSampling = UART_OVERSAMPLING_16;
-#if (USE_HAL_UART_REGISTER_CALLBACKS == 1)
-	hWiModUart->RxCpltCallback = USART_ITCharManager;
-#endif
+//	hWiModUart->RxCpltCallback = USART_ITCharManager;
 	hWiModUart->Init.BaudRate = baudRate;
 	hWiModUart->Init.WordLength = dataBits;
 	hWiModUart->Init.StopBits = UART_STOPBITS_1;
@@ -162,12 +150,26 @@ SerialDevice_Open(
 
 	if (HAL_UART_Init(hWiModUart) == HAL_OK)
 	{
-		HAL_UART_Receive_IT(hWiModUart, UsartTextString, 1);
+		HAL_UART_Receive_IT(hWiModUart, &UsartTextString, 1);
 		return true;
 	}
 
 	SerialDevice_Close();
 	Error_Handler();
+//	if (HAL_UARTEx_SetTxFifoThreshold(&huart, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+//	{
+//	_Error_Handler(__FILE__, __LINE__);
+//	}
+//
+//	if (HAL_UARTEx_SetRxFifoThreshold(&huart, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+//	{
+//	_Error_Handler(__FILE__, __LINE__);
+//	}
+//
+//	if (HAL_UARTEx_DisableFifoMode(&huart) != HAL_OK)
+//	{
+//	_Error_Handler(__FILE__, __LINE__);
+//	}
 
 #endif
     // error
@@ -319,17 +321,17 @@ SerialDevice_ReadData(UINT8* rxBuffer, size_t rxBufferSize)
         return (int)numRxBytes;
     }
 #else
-    //TODO : add your own platform specific code here
-    memcpy(rxBuffer, &UsartTextString, 1);
-	HAL_UART_Receive_IT(hWiModUart, UsartTextString, 1);
-    return 1;
-//    if(HAL_UART_Receive(hWiModUart, rxBuffer, rxBufferSize, 500) != HAL_ERROR)
+    // Todo : add your own platform specific code here
+    *rxBuffer = UsartTextString;
+	rxBufferSize = 1;
+	return rxBufferSize;
+//    if(HAL_UART_Receive(hWiModUart, rxBuffer, rxBufferSize, 100) != HAL_ERROR)
 //    {
 //    	return rxBufferSize;
 //    }
 #endif
     // error
-    return -1;
+//    return -1;
 }
 
 /**

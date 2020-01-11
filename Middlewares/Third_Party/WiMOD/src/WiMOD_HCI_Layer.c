@@ -100,7 +100,7 @@ WiMOD_HCI_Init(
     SLIP_SetRxBuffer(&rxMessage->SapID, sizeof(TWiMOD_HCI_Message) - sizeof(UINT16));
 
     // init serial device
-    return SerialDevice_Open(comPort, Baudrate_115200, DataBits_8, Parity_None);
+return SerialDevice_Open(comPort, Baudrate_115200, DataBits_8, Parity_None);
 }
 
 //------------------------------------------------------------------------------
@@ -157,6 +157,7 @@ WiMOD_HCI_SendMessage(TWiMOD_HCI_Message* txMessage)
         // 4. send octet sequence over serial device
         if (SerialDevice_SendData(TxBuffer, txLength) > 0)
         {
+//        	WiMOD_HCI_Process();
             // return ok
             return 1;
         }

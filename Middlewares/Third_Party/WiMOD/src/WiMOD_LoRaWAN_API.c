@@ -23,12 +23,15 @@
 #include "WiMOD_LoRaWAN_API.h"
 #include "WiMOD_HCI_Layer.h"
 #include "SerialDevice.h"
+//#include "utilities.h"
 #include <string.h>
 #include <stdio.h>
+#include "lwip/tcp.h"
 
 #define MAKEWORD(lo,hi) ((lo)|((hi) << 8))
 #define MAKELONG(lo,hi) ((lo)|((hi) << 16))
 
+extern struct tcp_pcb *echoclient_pcb;
 //------------------------------------------------------------------------------
 //
 //  Forward Declarations
@@ -208,7 +211,6 @@ WiMOD_LoRaWAN_Init(
 
 int WiMOD_DevMgmt_Msg_Req(uint8_t msg_id, uint8_t* val, uint16_t len)
 {
-	int ret;
 	TxMessage.SapID = DEVMGMT_SAP_ID;
 	TxMessage.MsgID = msg_id;
 
@@ -240,14 +242,11 @@ int WiMOD_DevMgmt_Msg_Req(uint8_t msg_id, uint8_t* val, uint16_t len)
 	if(TxMessage.Length > 0)
 		memcpy(TxMessage.Payload, val, TxMessage.Length);
 
-	ret = WiMOD_HCI_SendMessage(&TxMessage);
-	WiMOD_LoRaWAN_Process();
-	return ret;
+	return WiMOD_HCI_SendMessage(&TxMessage);
 }
 
 int WiMOD_LoRaWAN_Msg_Req(uint8_t msg_id, uint8_t* val, uint16_t len)
 {
-	int ret;
 	TxMessage.SapID = LORAWAN_SAP_ID;
 	TxMessage.MsgID = msg_id;
 
@@ -271,6 +270,7 @@ int WiMOD_LoRaWAN_Msg_Req(uint8_t msg_id, uint8_t* val, uint16_t len)
 			break;
 		case LORAWAN_MSG_SET_CUSTOM_CFG_REQ:
 		case LORAWAN_MSG_SET_LINKADRREQ_CONFIG_REQ:
+		case LORAWAN_MSG_SET_BATTERY_LEVEL_REQ:
 			TxMessage.Length = 1;
 			break;
 		case LORAWAN_MSG_SET_JOIN_PARAM_REQ:
@@ -294,9 +294,7 @@ int WiMOD_LoRaWAN_Msg_Req(uint8_t msg_id, uint8_t* val, uint16_t len)
 	if(TxMessage.Length > 0)
 		memcpy(TxMessage.Payload, val, TxMessage.Length);
 
-	ret = WiMOD_HCI_SendMessage(&TxMessage);
-	WiMOD_LoRaWAN_Process();
-	return ret;
+	return WiMOD_HCI_SendMessage(&TxMessage);
 }
 
 //------------------------------------------------------------------------------
@@ -1339,6 +1337,17 @@ WiMOD_LoRaWAN_Process_U_DataRxIndication(TWiMOD_HCI_Message* rxMessage)
         for(int i = 1; i < payloadSize; i++)
         	printf(num2hex(rxMessage->Payload[1+i], BYTE_F));
         printf("\n\r");
+
+        if(rxMessage->Payload[1] == 99) {
+//        	CRITICAL_SECTION_BEGIN();
+        	 //Restart system
+        	NVIC_SystemReset();
+
+        }
+//        else if(rxMessage->Payload[1] == 100)
+//        {
+//        	tcp_write(echoclient_pcb, rxMessage->Payload + 2, payloadSize, 1);
+//        }
     }
 
     if (rxMessage->Payload[0] & 0x02)
@@ -1590,7 +1599,6 @@ WiMOD_LoRaWAN_Process_Get_RSTACK_RSP(TWiMOD_HCI_Message* rxMessage)
 		printf("disable\n\r");
 	}
 
-
 	printf("Power Saving Mode: ");
 	if (rxMessage->Payload[4] & 0x1) {
 		printf("automatic\n\r");
@@ -1638,15 +1646,15 @@ WiMOD_LoRaWAN_Process_MAC_CMDRxIndication(TWiMOD_HCI_Message* rxMessage)
 		printf("\n\r");
     }
 
-    if (rxMessage->Payload[0] & 0x02)
-        printf("ack for uplink packet:yes\n\r");
-    else
-        printf("ack for uplink packet:no\n\r");
-
-    if (rxMessage->Payload[0] & 0x04)
-        printf("frame pending:yes\n\r");
-    else
-        printf("frame pending:no\n\r");
+//    if (rxMessage->Payload[0] & 0x02)
+//        printf("ack for uplink packet:yes\n\r");
+//    else
+//        printf("ack for uplink packet:no\n\r");
+//
+//    if (rxMessage->Payload[0] & 0x04)
+//        printf("frame pending:yes\n\r");
+//    else
+//        printf("frame pending:no\n\r");
 
     // rx channel info attached ?
     if (rxMessage->Payload[0] & 0x01)
@@ -1677,11 +1685,9 @@ WiMOD_LoRaWAN_Process_C_DataRxIndication(TWiMOD_HCI_Message* rxMessage)
     if (payloadSize >= 1)
     {
         printf("C-Data rx event: port:0x%02X\n\rapp-payload:", rxMessage->Payload[1]);
-        for(int i = 1; i < payloadSize; i++)
+        for(int i = 1; i < payloadSize;)
         	printf(num2hex(rxMessage->Payload[1+i], BYTE_F));
         printf("\n\r");
-        //TODO: downlink user setting
-//        uData.prior = rxMessage->Payload[2] <= 4 ? rxMessage->Payload[2] : 0xff;
     }
 
     if (rxMessage->Payload[0] & 0x02)
@@ -1783,13 +1789,10 @@ void GetCustomCFG(void) {
 //
 //------------------------------------------------------------------------------
 void ActivateABP(void) {
-	uint8_t payload[37] = { 0x04, 0x47, 0x00,
+	uint8_t payload[37] = { 0x57, 0x68, 0x00,
 			0x00, //Device address (LSB)
-			0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA,
-			0xBB, 0xCC, 0xDD, 0xEE,
-			0xFF,	//Network key (MSB)
-			0xFF, 0xEE, 0xDD, 0xCC, 0xBB, 0xAA, 0x99, 0x88, 0x77, 0x66, 0x55,
-			0x44, 0x33, 0x22, 0x11, 0x00, //App key (MSB)
+			0x72, 0x36, 0x78, 0x5a, 0x00, 0xa7, 0x1e, 0x1a, 0x0a, 0x8c, 0x6d, 0xd0, 0x62, 0xc9, 0xef, 0xbc,	//Network key (MSB)
+			0x22, 0x31, 0xba, 0x21, 0xf3, 0xc6, 0xa3, 0x5b, 0x17, 0x30, 0x56, 0xcb, 0x57, 0x31, 0xda, 0xcd, //App key (MSB)
 			0x00 //End of payload
 			};
 
@@ -1864,13 +1867,13 @@ void SetRadioStack(void) {
 
 	data[0] = 0x5;	//Default Data Rate Index
 	data[1] = 0x10;	//Default TX Power Level (EIRP)
-	data[2] = 0b11000010;
+	data[2] = 0b11000100;
 //	    Bit 0: 0 = Adaptive Data Rate disabled	    1 = Adaptive Data Rate enabled
 //	    Bit 1: 0 = Duty Cycle Control disabled 1 = Duty Cycle Control enabled (Customer Mode required)
 //	    Bit 2: 0 = Class A selected 1 = Class C selected
 //	    Bit 6: 0 = standard RF packet output format	    1 = extended RF packet output format: Tx/Rx channel info attached
 //	    Bit 7: 0 = Rx MAC Command Forwarding disabled 	    1 = Rx MAC Command Forwarding enabled
-	data[3] = 0x1;	//Power Saving Mode 0x00 : off	    0x01 : automatic
+	data[3] = 0x01;	//Power Saving Mode 0x00 : off	    0x01 : automatic
 	data[4] = 0x7;	//Number of Retransmissions
 	data[5] = 0x12;	//Band Index AS923TH
 	data[6] = 0xf;	// Header MAC Cmd Capacity
@@ -2132,7 +2135,7 @@ void Join(void) {
 //  @brief: send unconfirmed radio message
 //
 //------------------------------------------------------------------------------
-void SendUData(UINT8 port,       // LoRaWAN Port
+int SendUData(UINT8 port,       // LoRaWAN Port
 		UINT8* srcData,    // application payload
 		size_t srcLength) {
 	printf("send U-Data\n\r");
@@ -2148,7 +2151,7 @@ void SendUData(UINT8 port,       // LoRaWAN Port
 //    data[3] = 0x04;
 
 	// send unconfirmed radio message
-	WiMOD_LoRaWAN_SendURadioData(port, srcData, srcLength);
+	return WiMOD_LoRaWAN_SendURadioData(port, srcData, srcLength);
 }
 
 //------------------------------------------------------------------------------
@@ -2158,7 +2161,7 @@ void SendUData(UINT8 port,       // LoRaWAN Port
 //  @brief: send confirmed radio message
 //
 //------------------------------------------------------------------------------
-void SendCData(UINT8 port,       // LoRaWAN Port
+int SendCData(UINT8 port,       // LoRaWAN Port
 		UINT8* srcData,    // application payload
 		size_t srcLength) {
 	printf("send C-Data\n\r");
@@ -2176,7 +2179,13 @@ void SendCData(UINT8 port,       // LoRaWAN Port
 //    data[5] = 0x0F;
 
 	// send unconfirmed radio message
-	WiMOD_LoRaWAN_SendCRadioData(port, srcData, srcLength);
+	return WiMOD_LoRaWAN_SendCRadioData(port, srcData, srcLength);
+}
+
+int SetBatLVL(UINT8 batLvl)
+{
+	printf("Set bat lvl: %d\n\r", batLvl);
+	return WiMOD_LoRaWAN_Msg_Req(LORAWAN_MSG_SET_BATTERY_LEVEL_REQ, &batLvl, 1);
 }
 
 //------------------------------------------------------------------------------

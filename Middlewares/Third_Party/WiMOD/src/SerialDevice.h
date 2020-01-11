@@ -40,7 +40,7 @@
 #define Parity_Even         EVENPARITY
 #define Parity_None         NOPARITY
 #else
-#include <main.h>
+#include "main.h"
 #define Baudrate_9600       9600
 #define Baudrate_115200     115200
 #define DataBits_7          UART_WORDLENGTH_7B

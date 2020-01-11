@@ -27,6 +27,8 @@
 /* USER CODE BEGIN Includes */
 #include "stm32f4xx_Nucleo_144.h"
 #include "dust.h"
+#include "WiMOD_LoRaWAN_API.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -50,9 +52,10 @@ RTC_HandleTypeDef hrtc;
 
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
+UART_HandleTypeDef huart6;
 
 /* USER CODE BEGIN PV */
-
+extern uint8_t UsartTextString;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -62,13 +65,25 @@ static void MX_ADC1_Init(void);
 static void MX_RTC_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_USART6_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+void WiMOD_init( void );
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+void WiMOD_init( void ) {
+	Ping();
+	HAL_Delay(200);
+	Deactivate();
+	HAL_Delay(500);
+	GetDeviceInfo();
+	HAL_Delay(500);
+	SetOPMODE();
+	HAL_Delay(500);
+	SetRadioStack();
+	HAL_Delay(500);
+}
 /* USER CODE END 0 */
 
 /**
@@ -80,6 +95,7 @@ int main(void)
   /* USER CODE BEGIN 1 */
 	uint16_t pm2_5;
 	uint16_t pm10;
+	uint8_t buf[4];
   /* USER CODE END 1 */
   
 
@@ -107,16 +123,22 @@ int main(void)
   MX_USART3_UART_Init();
   MX_LWIP_Init();
   MX_USB_DEVICE_Init();
+  MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
   BSP_LED_Init(LED_GREEN);
   BSP_LED_Init(LED_BLUE);
   BSP_LED_Init(LED_RED);
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
   Initialize(&huart2);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  WiMOD_LoRaWAN_Init(&huart6);
+  WiMOD_init();
+  ActivateABP();
+
   while (1)
   {
 	  BSP_LED_On(LED_BLUE);
@@ -128,6 +150,13 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	  buf[0] = pm2_5 >> 8;
+	  buf[1] = pm2_5 >> 0;
+	  buf[2] = pm10 >> 8;
+	  buf[3] = pm10 >> 0;
+
+	  printf("SEND MSG.: len:%d\r\n", 4);
+	  SendUData(2, (uint8_t *) &buf, 4);
 
 	  HAL_Delay(15000);
   }
@@ -389,6 +418,39 @@ static void MX_USART3_UART_Init(void)
 }
 
 /**
+  * @brief USART6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART6_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART6_Init 0 */
+
+  /* USER CODE END USART6_Init 0 */
+
+  /* USER CODE BEGIN USART6_Init 1 */
+
+  /* USER CODE END USART6_Init 1 */
+  huart6.Instance = USART6;
+  huart6.Init.BaudRate = 115200;
+  huart6.Init.WordLength = UART_WORDLENGTH_8B;
+  huart6.Init.StopBits = UART_STOPBITS_1;
+  huart6.Init.Parity = UART_PARITY_NONE;
+  huart6.Init.Mode = UART_MODE_TX_RX;
+  huart6.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart6.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART6_Init 2 */
+
+  /* USER CODE END USART6_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -451,6 +513,11 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	if (huart->Instance == USART2)
 	{
 
+	}
+	else if (huart->Instance == USART6)
+	{
+		WiMOD_LoRaWAN_Process();
+		HAL_UART_Receive_IT(huart, &UsartTextString, 1);
 	}
 }
 
