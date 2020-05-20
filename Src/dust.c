@@ -50,7 +50,6 @@ bool ReadParticle( uint16_t* PM2_5, uint16_t* PM10 )
 		_PM10 = dataBuf[2] * 256 + dataBuf[3];
 		*PM2_5 = _PM2_5;
 		*PM10 = _PM10;
-		printf("pm2.5: %d ug/m3; pm10: %d ug/m3\r\n", _PM2_5, _PM10);
 		return true;
 	} else {
 		printf("NACK\r\n");

@@ -28,7 +28,7 @@
 #include "stm32f4xx_Nucleo_144.h"
 #include "dust.h"
 #include "WiMOD_LoRaWAN_API.h"
-
+#include "co2.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,6 +48,8 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 
+I2C_HandleTypeDef hi2c1;
+
 RTC_HandleTypeDef hrtc;
 
 UART_HandleTypeDef huart2;
@@ -65,6 +67,7 @@ static void MX_ADC1_Init(void);
 static void MX_RTC_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_I2C1_Init(void);
 static void MX_USART6_UART_Init(void);
 /* USER CODE BEGIN PFP */
 void WiMOD_init( void );
@@ -93,11 +96,12 @@ void WiMOD_init( void ) {
 int main(void)
 {
   /* USER CODE BEGIN 1 */
+	uint16_t co2;
+	uint16_t temperature;
 	uint16_t pm2_5;
 	uint16_t pm10;
-	uint8_t buf[4];
+	uint8_t buf[8];
   /* USER CODE END 1 */
-  
 
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -123,6 +127,7 @@ int main(void)
   MX_USART3_UART_Init();
   MX_LWIP_Init();
   MX_USB_DEVICE_Init();
+  MX_I2C1_Init();
   MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
   BSP_LED_Init(LED_GREEN);
@@ -130,22 +135,28 @@ int main(void)
   BSP_LED_Init(LED_RED);
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
   Initialize(&huart2);
-
+  CO2_Initialize(&hi2c1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  WiMOD_LoRaWAN_Init(&huart6);
-  WiMOD_init();
-  ActivateABP();
+  CO2_Calibration();
+
+//  WiMOD_LoRaWAN_Init(&huart6);
+//  WiMOD_init();
+//  ActivateABP();
 
   while (1)
   {
 	  BSP_LED_On(LED_BLUE);
+
 	  StartMeasurement();
+
 	  HAL_Delay(15000);
 	  ReadParticle(&pm2_5, &pm10);
 	  StopMeasurement();
+	  CO2_StartMeasure(&co2, &temperature);
+
 	  BSP_LED_Off(LED_BLUE);
     /* USER CODE END WHILE */
 
@@ -154,9 +165,14 @@ int main(void)
 	  buf[1] = pm2_5 >> 0;
 	  buf[2] = pm10 >> 8;
 	  buf[3] = pm10 >> 0;
-
-	  printf("SEND MSG.: len:%d\r\n", 4);
-	  SendUData(2, (uint8_t *) &buf, 4);
+	  buf[4] = co2 >> 8;
+	  buf[5] = co2 >> 0;
+	  buf[6] = temperature >> 8;
+	  buf[7] = temperature >> 0;
+	  printf("pm2.5: %d ug/m3; pm10: %d ug/m3 pm10: %d ppm; T=%.2f\r\n",
+			  pm2_5, pm10, co2, temperature / 100.0f);
+	  printf("SEND MSG.: len:%d\r\n", sizeof(buf));
+//	  SendUData(2, (uint8_t *) &buf, sizeof(buf));
 
 	  HAL_Delay(15000);
   }
@@ -268,6 +284,52 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure Analogue filter 
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure Digital filter 
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
 
 }
 
@@ -468,6 +530,9 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOG_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(CO2_EN_GPIO_Port, CO2_EN_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LD1_Pin|LD3_Pin|LD2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
@@ -478,6 +543,19 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(USER_Btn_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : CO2_EN_Pin */
+  GPIO_InitStruct.Pin = CO2_EN_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(CO2_EN_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : CO2_NRDY_Pin */
+  GPIO_InitStruct.Pin = CO2_NRDY_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(CO2_NRDY_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : LD1_Pin LD3_Pin LD2_Pin */
   GPIO_InitStruct.Pin = LD1_Pin|LD3_Pin|LD2_Pin;
