@@ -29,6 +29,7 @@
 #include "dust.h"
 #include "WiMOD_LoRaWAN_API.h"
 #include "co2.h"
+#include "soundlvl.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -58,6 +59,7 @@ UART_HandleTypeDef huart6;
 
 /* USER CODE BEGIN PV */
 extern uint8_t UsartTextString;
+extern SOUNDLVL_t sl_sensor;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -96,11 +98,12 @@ void WiMOD_init( void ) {
 int main(void)
 {
   /* USER CODE BEGIN 1 */
+	uint32_t count = 0;
 	uint16_t co2;
 	uint16_t temperature;
 	uint16_t pm2_5;
 	uint16_t pm10;
-	uint8_t buf[8];
+	uint8_t buf[10];
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -136,15 +139,16 @@ int main(void)
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
   Initialize(&huart2);
   CO2_Initialize(&hi2c1);
+  SL_Initialize(&hadc1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   CO2_Calibration();
 
-//  WiMOD_LoRaWAN_Init(&huart6);
-//  WiMOD_init();
-//  ActivateABP();
+  WiMOD_LoRaWAN_Init(&huart6);
+  WiMOD_init();
+  ActivateABP();
 
   while (1)
   {
@@ -157,6 +161,7 @@ int main(void)
 	  StopMeasurement();
 	  CO2_StartMeasure(&co2, &temperature);
 
+	  SL_StartMeasure(&sl_sensor);
 	  BSP_LED_Off(LED_BLUE);
     /* USER CODE END WHILE */
 
@@ -169,11 +174,16 @@ int main(void)
 	  buf[5] = co2 >> 0;
 	  buf[6] = temperature >> 8;
 	  buf[7] = temperature >> 0;
-	  printf("pm2.5: %d ug/m3; pm10: %d ug/m3 pm10: %d ppm; T=%.2f\r\n",
-			  pm2_5, pm10, co2, temperature / 100.0f);
+	  buf[8] = sl_sensor.sound_lvl >> 8;
+	  buf[9] = sl_sensor.sound_lvl >> 0;
+	  printf("pm2.5: %d ug/m3; pm10: %d ug/m3 pm10: %d ppm; T=%.2f sound=%d dBA\r\n",
+			  pm2_5, pm10, co2, temperature / 100.0f, sl_sensor.sound_lvl);
 	  printf("SEND MSG.: len:%d\r\n", sizeof(buf));
-//	  SendUData(2, (uint8_t *) &buf, sizeof(buf));
-
+	  SendUData(2, (uint8_t *) &buf, sizeof(buf));
+	  if(count == 6000) {
+		  Reactivate();
+	  }
+	  count++;
 	  HAL_Delay(15000);
   }
   /* USER CODE END 3 */
@@ -530,7 +540,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOG_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(CO2_EN_GPIO_Port, CO2_EN_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(CO2_EN_GPIO_Port, CO2_EN_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LD1_Pin|LD3_Pin|LD2_Pin, GPIO_PIN_RESET);
@@ -547,14 +557,14 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : CO2_EN_Pin */
   GPIO_InitStruct.Pin = CO2_EN_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(CO2_EN_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : CO2_NRDY_Pin */
   GPIO_InitStruct.Pin = CO2_NRDY_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(CO2_NRDY_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : LD1_Pin LD3_Pin LD2_Pin */
